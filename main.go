@@ -9,11 +9,10 @@ import (
 func main() {
 	dsn := "root:Aa40303991.@tcp(127.0.0.1:3306)/box?charset=utf8mb4&parseTime=True&loc=Local"
 	db, _ := gorm.Open(mysql.Open(dsn), &gorm.Config{})
-	g := mysql_gen.NewGenerator(mysql_gen.Config{
-		Database:    db,
-		OutFilePath: "./files",
+	g := mysql_gen.NewGenerator(db, mysql_gen.Config{
+		ModelOutputPath: "./files",
 	})
-	g.GenerateTable("tblUser")
+	g.GenerateModel("tblMedical")
 	//g.GenerateAllTable()
 	g.Execute()
 }
