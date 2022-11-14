@@ -31,8 +31,8 @@ type Field struct {
 	Type             string
 	Comment          string
 	MultilineComment bool
-	JSONTag          string
 	GORMTag          string
+	JSONTag          string
 	NewTag           string
 	OverwriteTag     string
 	CustomGenType    string
@@ -58,20 +58,17 @@ func (g *Generator) GenerateModelWithOption(table string, structName string, con
 	if err != nil {
 		return nil, err
 	}
-	newTableName, structName, fileName, err := getNames(table)
+	_, structName, fileName, err := getNames(table)
 	if err != nil {
 		return nil, err
 	}
-	//if config.tableNameNS != nil {
-	//	newTableName = config.tableNameNS(table)
-	//}
 	if config.structNameNS != nil {
 		structName = config.structNameNS(table)
 	}
 	if config.fileNameNS != nil {
 		fileName = config.fileNameNS(table)
 	}
-	if len(newTableName) == 0 {
+	if len(structName) == 0 {
 		return nil, fmt.Errorf("newTableName is empty")
 	}
 	if !firstUpperRegex.MatchString(structName) {
@@ -81,10 +78,10 @@ func (g *Generator) GenerateModelWithOption(table string, structName string, con
 		return nil, fmt.Errorf("file is empty")
 	}
 	fmt.Println(tableInfo)
-	if _, ok := g.structMap[newTableName]; ok {
-		g.structMap[newTableName].Tables = append(g.structMap[newTableName].Tables, table)
+	if _, ok := g.structMap[structName]; ok {
+		g.structMap[structName].Tables = append(g.structMap[structName].Tables, table)
 	} else {
-		g.structMap[newTableName] = &StructMeta{
+		g.structMap[structName] = &StructMeta{
 			FileName:   fileName,
 			StructName: structName,
 			//TableName:  newTableName,
@@ -92,7 +89,7 @@ func (g *Generator) GenerateModelWithOption(table string, structName string, con
 			Tables: []string{},
 		}
 	}
-	return g.structMap[newTableName], nil
+	return g.structMap[structName], nil
 }
 
 const defaultFieldType = "string"
@@ -151,45 +148,38 @@ func (m dataTypeMap) Get(dataType, detailType string) string {
 }
 
 // needDefaultTag check if default tag needed
-func needDefaultTag(kind reflect.Kind, defaultTagValue string) bool {
-	if defaultTagValue == "" {
+func needDefaultTag(columnDefaultType reflect.Kind, columnDefaultValue string) bool {
+	switch columnDefaultType {
+	case reflect.Bool:
+		return columnDefaultValue != "false"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float32, reflect.Float64:
+		return columnDefaultValue != "0"
+	case reflect.String:
+		return columnDefaultValue != ""
+	case reflect.Struct:
+		return strings.Trim(columnDefaultValue, "'0:- ") != ""
+	default:
 		return false
 	}
-	switch kind {
-	case reflect.Bool:
-		return defaultTagValue != "false"
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float32, reflect.Float64:
-		return defaultTagValue != "0"
-	case reflect.String:
-		return defaultTagValue != ""
-	case reflect.Struct:
-		return strings.Trim(defaultTagValue, "'0:- ") != ""
-	}
-	return false
-	//return c.Name() != "created_at" && c.Name() != "updated_at"
 }
 
 func formatColumn2Field(column helpers.Column, config FieldConfig) Field {
 	fieldType := defaultFieldType
-	//2.默认的数据库类型与 Go 类型的对应关系
+	//1.默认的数据库类型与 Go 类型的对应关系
 	if convert, ok := defaultColumnType2GoType[strings.ToLower(column.Type)]; ok {
 		fieldType = convert(column.Type)
 	}
+	//2.如果是需要符号，则通过详细类型判断是否需要添加 u
 	if config.FieldSigned &&
 		strings.Contains(column.DetailType, "unsigned") &&
 		strings.HasPrefix(fieldType, "int") {
 		fieldType = "u" + fieldType
 	}
-	//获取默认值
-	columnDefaultValue := column.DefaultValue
-	if len(strings.TrimSpace(columnDefaultValue)) > 0 {
-		columnDefaultValue = "'" + columnDefaultValue + "'"
-	}
 	switch {
 	case column.Name == "deleted_at" && fieldType == "time.Time":
 		fieldType = "gorm.DeletedAt"
-	//case config.FieldCoverable && column.NeedDefaultTag:
-	//	fieldType = "*" + fieldType
+	case config.FieldCoverable && needDefaultTag(column.Kind, column.DefaultValue):
+		fieldType = "*" + fieldType
 	case config.FieldNullable && column.Nullable:
 		fieldType = "*" + fieldType
 	}
@@ -200,21 +190,19 @@ func formatColumn2Field(column helpers.Column, config FieldConfig) Field {
 			fieldType = mapping(column.DetailType)
 		}
 	}
-	fmt.Println(fieldType)
-	return Field{
+	field := Field{
 		Name:             column.Name,
 		Type:             fieldType,
 		Comment:          column.Comment,
 		MultilineComment: strings.Contains(column.Comment, "\n"),
-		JSONTag:          "",
 		GORMTag:          column.BuildGormTag(),
+		JSONTag:          "",
 		NewTag:           "",
 		OverwriteTag:     "",
 		CustomGenType:    "",
 	}
+	return field
 
-	//col.SetDataTypeMap(conf.DataTypeMap)
-	//col.WithNS(conf.FieldJSONTagNS, conf.FieldNewTagNS)
 	//
 	//m := col.ToField(conf.FieldNullable, conf.FieldCoverable, conf.FieldSigned)
 	//

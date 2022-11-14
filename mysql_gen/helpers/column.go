@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"gorm.io/gorm"
+	"reflect"
+	"strings"
 )
 
 // Index table index info
@@ -15,23 +17,20 @@ type Index struct {
 // Column table column's info
 type Column struct {
 	gormColumnType gorm.ColumnType
-	Table          string
-	Name           string
-	Type           string //varchar
-	DetailType     string //varchar(255)
-	DefaultValue   string
-	Comment        string
+	Table          string       //tblUser
+	Name           string       //user_id
+	Kind           reflect.Kind //reflect.String
+	Type           string       //varchar
+	DetailType     string       //varchar(255)
+	DefaultValue   string       //0
+	Comment        string       //用户ID
 	Nullable       bool
-	AutoIncrement  bool
 	Indexes        []*Index
 }
 
 func (c *Column) BuildGormTag() string {
 	var buf bytes.Buffer
 	buf.WriteString(fmt.Sprintf("column:%s;type:%s", c.Name, c.DetailType))
-	//if len(strings.TrimSpace(defaultValue)) > 0 {
-	//	defaultValue = "'" + defaultValue + "'"
-	//}
 	isPriKey, ok := c.gormColumnType.PrimaryKey()
 	isValidPriKey := ok && isPriKey
 	if isValidPriKey {
@@ -42,7 +41,6 @@ func (c *Column) BuildGormTag() string {
 	} else if n, ok := c.gormColumnType.Nullable(); ok && !n {
 		buf.WriteString(";not null")
 	}
-
 	for _, idx := range c.Indexes {
 		if idx == nil {
 			continue
@@ -56,13 +54,8 @@ func (c *Column) BuildGormTag() string {
 			buf.WriteString(fmt.Sprintf(";index:%s,priority:%d", idx.Name(), idx.Priority))
 		}
 	}
-
-	if isValidPriKey {
-		return buf.String()
+	if !isValidPriKey && len(strings.TrimSpace(c.DefaultValue)) > 0 {
+		buf.WriteString(fmt.Sprintf(`;default:'%s'`, c.DefaultValue))
 	}
-
-	//if !isValidPriKey && c.NeedDefaultTag { // cannot set default tag for primary key
-	//	buf.WriteString(fmt.Sprintf(`;default:%s`, c.DefaultValue))
-	//}
 	return buf.String()
 }

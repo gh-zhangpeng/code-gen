@@ -48,18 +48,17 @@ func GetTableInfo(db *gorm.DB, table string) (*Table, error) {
 		detailType, _ := tableColumn.ColumnType()
 		defaultValue, _ := tableColumn.DefaultValue()
 		nullable, _ := tableColumn.Nullable()
-		autoIncrement, _ := tableColumn.AutoIncrement()
 		comment, _ := tableColumn.Comment()
 		column := Column{
 			gormColumnType: tableColumn,
 			Table:          table,
 			Name:           tableColumn.Name(),
+			Kind:           tableColumn.ScanType().Kind(),
 			Type:           tableColumn.DatabaseTypeName(),
 			DetailType:     detailType,
 			DefaultValue:   defaultValue,
 			Comment:        comment,
 			Nullable:       nullable,
-			AutoIncrement:  autoIncrement,
 			Indexes:        nil,
 		}
 		columns = append(columns, column)
