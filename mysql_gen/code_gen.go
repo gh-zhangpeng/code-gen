@@ -34,8 +34,6 @@ type Field struct {
 	GORMTag          string
 	JSONTag          string
 	NewTag           string
-	OverwriteTag     string
-	CustomGenType    string
 }
 
 type StructMeta struct {
@@ -77,16 +75,15 @@ func (g *Generator) GenerateModelWithOption(table string, structName string, con
 	if len(fileName) == 0 {
 		return nil, fmt.Errorf("file is empty")
 	}
-	fmt.Println(tableInfo)
+
 	if _, ok := g.structMap[structName]; ok {
 		g.structMap[structName].Tables = append(g.structMap[structName].Tables, table)
 	} else {
 		g.structMap[structName] = &StructMeta{
 			FileName:   fileName,
 			StructName: structName,
-			//TableName:  newTableName,
-			Fields: getFields(tableInfo, config.FiledConfig),
-			Tables: []string{},
+			Fields:     getFields(tableInfo, config.FiledConfig),
+			Tables:     []string{},
 		}
 	}
 	return g.structMap[structName], nil
@@ -196,61 +193,24 @@ func formatColumn2Field(column helpers.Column, config FieldConfig) Field {
 		Comment:          column.Comment,
 		MultilineComment: strings.Contains(column.Comment, "\n"),
 		GORMTag:          column.BuildGormTag(),
-		JSONTag:          "",
-		NewTag:           "",
-		OverwriteTag:     "",
-		CustomGenType:    "",
+	}
+	if config.fieldJSONTagNS != nil {
+		field.JSONTag = config.fieldJSONTagNS(column.Name)
+	}
+	if config.fieldNewTagNS != nil {
+		field.NewTag = config.fieldNewTagNS(column.Name)
+	}
+	if !config.FieldWithTypeTag { // remove type tag if FieldWithTypeTag == false
+		field.GORMTag = strings.ReplaceAll(field.GORMTag, ";type:"+column.DetailType, "")
 	}
 	return field
-
-	//
-	//m := col.ToField(conf.FieldNullable, conf.FieldCoverable, conf.FieldSigned)
-	//
-	//if filterField(m, conf.FilterOpts) == nil {
-	//	continue
-	//}
-	//if t, ok := col.ColumnType.ColumnType(); ok && !conf.FieldWithTypeTag { // remove type tag if FieldWithTypeTag == false
-	//	m.GORMTag = strings.ReplaceAll(m.GORMTag, ";type:"+t, "")
-	//}
-	//
-	//m = modifyField(m, conf.ModifyOpts)
-	//if ns, ok := db.NamingStrategy.(schema.NamingStrategy); ok {
-	//	ns.SingularTable = true
-	//	m.Name = ns.SchemaName(ns.TablePrefix + m.Name)
-	//} else if db.NamingStrategy != nil {
-	//	m.Name = db.NamingStrategy.SchemaName(m.Name)
-	//}
-
 }
 
 func getFields(table *helpers.Table, config FieldConfig) []Field {
 	fields := make([]Field, 0, len(table.Columns))
 	for _, col := range table.Columns {
 		fields = append(fields, formatColumn2Field(col, config))
-		//
-		//m := col.ToField(conf.FieldNullable, conf.FieldCoverable, conf.FieldSigned)
-		//
-		//if filterField(m, conf.FilterOpts) == nil {
-		//	continue
-		//}
-		//if t, ok := col.ColumnType.ColumnType(); ok && !conf.FieldWithTypeTag { // remove type tag if FieldWithTypeTag == false
-		//	m.GORMTag = strings.ReplaceAll(m.GORMTag, ";type:"+t, "")
-		//}
-		//
-		//m = modifyField(m, conf.ModifyOpts)
-		//if ns, ok := db.NamingStrategy.(schema.NamingStrategy); ok {
-		//	ns.SingularTable = true
-		//	m.Name = ns.SchemaName(ns.TablePrefix + m.Name)
-		//} else if db.NamingStrategy != nil {
-		//	m.Name = db.NamingStrategy.SchemaName(m.Name)
-		//}
-		//fields = append(fields, m)
 	}
-	//for _, create := range conf.CreateOpts {
-	//	m := create.Operator()(nil)
-	//	fields = append(fields, m)
-	//}
-	fmt.Println(fields)
 	return fields
 }
 
@@ -263,29 +223,7 @@ func (g *Generator) GenerateAllTable() {
 func (g *Generator) Execute() {
 	fmt.Printf("The following tables struct will be generated: %+v\n", g.tables)
 	fmt.Println("Start generating code")
-	type table struct {
-		structName string
-		tableCount int
-	}
-	newTableName2Table := make(map[string]table)
-	for _, tableName := range g.tables {
-		newTableName, structName, fileName, err := getNames(tableName)
-		if err != nil {
-			return
-		}
-		newTableName2Table[newTableName] = table{
-			//tableName:  tableName,
-			structName: structName,
-			tableCount: newTableName2Table[newTableName].tableCount + 1,
-		}
-		fmt.Printf("table: %s, newTableName: %s, struct: %s, file: %s\n", tableName, newTableName, structName, fileName)
-		types, err := g.db.Migrator().ColumnTypes(tableName)
-		if err != nil {
-			return
-		}
-		fmt.Println(types)
-	}
-	fmt.Printf("newTableName2Table: %+v\n", newTableName2Table)
+
 	fmt.Println("Generate code done")
 }
 
