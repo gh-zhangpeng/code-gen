@@ -2,7 +2,7 @@ package templates
 
 // Model template for model
 const Model = FileHeader + `
-package {{.StructInfo.Package}}
+package model
 
 import (
 	"encoding/json"

@@ -1,11 +1,21 @@
 package mysql_gen
 
 import (
+	"bytes"
 	"code-gen/mysql_gen/helpers"
+	"code-gen/mysql_gen/templates"
+	"code-gen/pool"
 	"fmt"
+	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/imports"
 	"gorm.io/gorm"
+	"html/template"
+	"io"
+	"os"
 	"reflect"
 	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -223,8 +233,101 @@ func (g *Generator) GenerateAllTable() {
 func (g *Generator) Execute() {
 	fmt.Printf("The following tables struct will be generated: %+v\n", g.tables)
 	fmt.Println("Start generating code")
-
+	g.generateModelFile()
 	fmt.Println("Generate code done")
+}
+
+// generateModelFile generate model structures and save to file
+func (g *Generator) generateModelFile() error {
+	if len(g.structMap) == 0 {
+		return nil
+	}
+
+	if err := os.MkdirAll(g.config.ModelOutputPath, os.ModePerm); err != nil {
+		return fmt.Errorf("create model pkg path(%s) fail: %s", g.config.ModelOutputPath, err)
+	}
+	errChan := make(chan error)
+	var concurrent = runtime.NumCPU()
+	p := pool.NewPool(concurrent)
+	for _, data := range g.structMap {
+		if data == nil {
+			continue
+		}
+		p.Wait()
+		go func(data *StructMeta) {
+			defer p.Done()
+
+			var buf bytes.Buffer
+			err := render(templates.Model, &buf, data)
+			if err != nil {
+				errChan <- err
+				return
+			}
+
+			modelFile := g.config.ModelOutputPath + data.FileName + ".gen.go"
+			err = output(modelFile, buf.Bytes())
+			if err != nil {
+				errChan <- err
+				return
+			}
+
+			//g.info(fmt.Sprintf("generate model file(table <%s> -> {%s.%s}): %s", data.TableName, data.StructInfo.Package, data.StructInfo.Type, modelFile))
+		}(data)
+	}
+	select {
+	case err := <-errChan:
+		return err
+	case <-p.AsyncWaitAll():
+		g.fillModelPkgPath(g.config.ModelOutputPath)
+	}
+	return nil
+}
+
+func (g *Generator) fillModelPkgPath(filePath string) {
+	pkgs, err := packages.Load(&packages.Config{
+		Mode: packages.NeedName,
+		Dir:  filePath,
+	})
+	if err != nil {
+		return
+	}
+	if len(pkgs) == 0 {
+		return
+	}
+	fmt.Println(pkgs[0].PkgPath)
+}
+
+func output(fileName string, content []byte) error {
+	result, err := imports.Process(fileName, content, nil)
+	if err != nil {
+		lines := strings.Split(string(content), "\n")
+		errLine, _ := strconv.Atoi(strings.Split(err.Error(), ":")[1])
+		startLine, endLine := errLine-5, errLine+5
+		fmt.Println("Format fail:", errLine, err)
+		if startLine < 0 {
+			startLine = 0
+		}
+		if endLine > len(lines)-1 {
+			endLine = len(lines) - 1
+		}
+		for i := startLine; i <= endLine; i++ {
+			fmt.Println(i, lines[i])
+		}
+		return fmt.Errorf("cannot format file: %w", err)
+	}
+	return os.WriteFile(fileName, result, 0640)
+}
+
+func render(tmpl string, wr io.Writer, data interface{}) error {
+	t, err := template.New(tmpl).Parse(tmpl)
+	if err != nil {
+		return err
+	}
+	err = t.Execute(wr, data)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 var tableNameRegex = regexp.MustCompile("^([A-Za-z][-_]*)+[0-9]*$")
